@@ -1,0 +1,55 @@
+{
+  "skill": "so101-placing-in-container",
+  "inputs": {
+    "container_obb": "OrientedBoundingBox",
+    "color": "str"
+  },
+  "outputs": {},
+  "nodes": {
+    "put": {
+      "type": "script",
+      "script": "scripts/so101_place.py",
+      "inputs": {
+        "container_obb": {
+          "$ref": "in.container_obb"
+        },
+        "color": {
+          "$ref": "in.color"
+        },
+        "colors": "red,green,blue,yellow"
+      }
+    },
+    "verify": {
+      "type": "script",
+      "script": "scripts/verify_in_container.py",
+      "inputs": {
+        "color": {
+          "$ref": "in.color"
+        }
+      }
+    }
+  },
+  "edges": [
+    [
+      "START",
+      "put"
+    ],
+    [
+      "put",
+      "verify"
+    ],
+    [
+      "verify",
+      "END"
+    ]
+  ],
+  "conditional_edges": {},
+  "exit": {
+    "router_field": "verdict",
+    "success_values": [
+      "verified",
+      "missed"
+    ]
+  },
+  "on_error": "blocked"
+}

@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph-as-Policy × LeRobot SO-101 on NVIDIA Jetson AGX Orin</title>
+<meta name="description" content="Colour-cube sorting with a typed skill graph — perception, VLM reasoning, IK and MuJoCo simulation — running entirely on one NVIDIA Jetson AGX Orin. Graphs can be written by hand or generated from a sentence by a local LLM.">
+<meta property="og:title" content="Graph-as-Policy × LeRobot SO-101 on NVIDIA Jetson AGX Orin">
+<meta property="og:description" content="A typed skill graph drives the LeRobot SO-101 — perception, VLM, IK and sim on one Jetson AGX Orin.">
+<meta property="og:image" content="media/graph_run.gif">
+<link rel="icon" href="media/jetson_orin.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --green: #76b900;
+  --green-ink: #4f7d00;
+  --green-soft: #eef7dc;
+  --bg: #ffffff;
+  --bg-alt: #f6f7f4;
+  --ink: #15181d;
+  --ink-2: #4a5059;
+  --line: #e2e5df;
+  --card: #ffffff;
+  --code-bg: #12151a;
+  --code-ink: #e7ebe3;
+  --shadow: 0 1px 2px rgba(20, 24, 29, .06), 0 8px 24px rgba(20, 24, 29, .06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --green: #8bd30a;
+    --green-ink: #a6e43a;
+    --green-soft: #1c2610;
+    --bg: #0e1013;
+    --bg-alt: #14171b;
+    --ink: #eef1ec;
+    --ink-2: #a7aea4;
+    --line: #262b30;
+    --card: #171a1f;
+    --code-bg: #0a0c0f;
+    --code-ink: #e7ebe3;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --green: #8bd30a; --green-ink: #a6e43a; --green-soft: #1c2610; --bg: #0e1013; --bg-alt: #14171b;
+  --ink: #eef1ec; --ink-2: #a7aea4; --line: #262b30; --card: #171a1f; --code-bg: #0a0c0f;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--green-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+img { max-width: 100%; display: block; }
+.demo-main img, figure .frame img { width: 100%; height: auto; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+code, pre { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+:not(pre) > code {
+  font-size: .88em; background: var(--bg-alt); border: 1px solid var(--line);
+  padding: .08em .38em; border-radius: 6px;
+}
+
+/* nav */
+nav {
+  position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(160%) blur(10px); border-bottom: 1px solid var(--line);
+}
+nav .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
+.brand img { width: 30px; height: auto; }
+nav ul { display: flex; gap: 22px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 14.5px; }
+nav ul a { color: var(--ink-2); }
+nav ul a:hover { color: var(--ink); text-decoration: none; }
+.gh {
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
+  background: var(--ink); color: var(--bg) !important; font-size: 14px; font-weight: 600;
+}
+.gh:hover { text-decoration: none; opacity: .9; }
+.gh svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* hero */
+.hero { padding: 72px 0 56px; background:
+  radial-gradient(900px 380px at 85% 10%, color-mix(in srgb, var(--green) 16%, transparent), transparent 70%); }
+.hero .wrap { display: grid; grid-template-columns: 1.25fr .9fr; gap: 48px; align-items: center; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.tag {
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
+}
+.tag.nv { background: var(--green); border-color: var(--green); color: #0b1200; }
+h1 {
+  font-size: clamp(34px, 5vw, 54px); line-height: 1.08; letter-spacing: -.03em; margin: 0 0 18px; font-weight: 800;
+}
+h1 .hl { color: var(--green-ink); }
+.lede { font-size: 18.5px; color: var(--ink-2); max-width: 600px; margin: 0 0 28px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: 10px;
+  font-weight: 600; font-size: 15px; border: 1px solid var(--line); color: var(--ink); background: var(--card);
+}
+.btn.primary { background: var(--green); border-color: var(--green); color: #0b1200; }
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.hero-card {
+  position: relative; border-radius: 22px; padding: 34px 28px 26px; background: var(--card);
+  border: 1px solid var(--line); box-shadow: var(--shadow); text-align: center;
+}
+.hero-card .orin {
+  margin: 0 auto 14px; width: 185px; height: 162px; image-rendering: auto;
+  filter: drop-shadow(0 18px 22px rgba(60, 120, 0, .25));
+}
+.hero-card .cap { font-weight: 700; font-size: 17px; }
+.hero-card .sub { color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+.stack { display: grid; gap: 8px; margin-top: 20px; text-align: left; }
+.stack div {
+  display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; padding: 9px 12px;
+  border-radius: 10px; background: var(--bg-alt); border: 1px solid var(--line);
+}
+.stack b { font-weight: 600; }
+.stack span { color: var(--ink-2); text-align: right; }
+
+/* sections */
+section { padding: 72px 0; }
+section.alt { background: var(--bg-alt); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.eyebrow { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--green-ink); margin: 0 0 8px; }
+h2 { font-size: clamp(26px, 3.4vw, 36px); letter-spacing: -.02em; line-height: 1.15; margin: 0 0 14px; }
+.intro { color: var(--ink-2); max-width: 720px; margin: 0 0 36px; font-size: 17px; }
+h3 { font-size: 18px; margin: 0 0 6px; letter-spacing: -.01em; }
+
+/* demo */
+.demo-main {
+  border-radius: 16px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); background: #fff;
+}
+.demo-cap { color: var(--ink-2); font-size: 14.5px; margin: 12px 2px 28px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+figure { margin: 0; }
+figure .frame { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); background: #fff; }
+figcaption { color: var(--ink-2); font-size: 14px; margin-top: 10px; }
+
+/* architecture */
+.arch { border-radius: 18px; border: 2px solid var(--green); background: var(--card); padding: 22px; box-shadow: var(--shadow); }
+.arch-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.arch-head img { width: 44px; }
+.arch-head b { font-size: 17px; }
+.arch-head span { color: var(--ink-2); font-size: 14px; }
+.arch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.blk { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--bg-alt); }
+.blk .k { font-size: 12px; font-weight: 700; color: var(--green-ink); text-transform: uppercase; letter-spacing: .08em; }
+.blk h3 { margin-top: 4px; }
+.blk p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.blk.wide { grid-column: span 3; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.blk.wide p { max-width: 640px; }
+.port { font-family: "JetBrains Mono", monospace; font-size: 12.5px; padding: 3px 8px; border-radius: 6px; background: var(--green-soft); color: var(--green-ink); }
+
+/* graph steps */
+.flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; position: relative; }
+.step { position: relative; padding: 0 10px; }
+.step .card { height: 100%; border-radius: 14px; border: 1px solid var(--line); background: var(--card); padding: 18px; box-shadow: var(--shadow); }
+.step .n {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px;
+  background: var(--green); color: #0b1200; margin-bottom: 12px;
+}
+.step .skill { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+.step p { margin: 0 0 10px; font-size: 14.5px; color: var(--ink-2); }
+.exits { display: flex; flex-wrap: wrap; gap: 6px; }
+.ex { font-family: "JetBrains Mono", monospace; font-size: 11.5px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--line); }
+.ex.ok { background: var(--green-soft); color: var(--green-ink); border-color: transparent; }
+.ex.bad { color: #b4232c; }
+.step:not(:last-child)::after {
+  content: "→"; position: absolute; right: -9px; top: 40px; font-weight: 700; color: var(--green-ink); font-size: 18px;
+}
+.loopnote { margin-top: 22px; font-size: 14.5px; color: var(--ink-2); padding: 12px 16px; border-left: 3px solid var(--green); background: var(--card); border-radius: 0 10px 10px 0; }
+
+/* code */
+.term { border-radius: 14px; background: var(--code-bg); color: var(--code-ink); box-shadow: var(--shadow); overflow: hidden; }
+.term-bar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.term-bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f46; display: block; }
+.term-bar span { margin-left: 8px; font-size: 12.5px; color: #8d959c; font-family: "JetBrains Mono", monospace; }
+.term-bar button {
+  margin-left: auto; font: 600 12px Inter, sans-serif; color: #c7cec5; background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.term-bar button:hover { background: rgba(255,255,255,.14); }
+pre { margin: 0; padding: 16px 18px 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.65; }
+pre .c { color: #7f8a86; }
+pre .p { color: var(--green); user-select: none; }
+pre .ok { color: #a6e43a; }
+pre .warn { color: #e8c35d; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+ol.rules { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 10px; }
+ol.rules li { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); font-size: 14.5px; }
+ol.rules b { color: var(--green-ink); font-family: "JetBrains Mono", monospace; margin-right: 6px; }
+
+/* tables */
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); font-size: 14.5px; }
+.tbl th, .tbl td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tbl th { background: var(--bg-alt); font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl td code { white-space: nowrap; }
+.pill { display: inline-block; font-weight: 700; font-size: 13px; padding: 2px 9px; border-radius: 999px; }
+.pill.g { background: var(--green-soft); color: var(--green-ink); }
+.pill.y { background: color-mix(in srgb, #e8c35d 22%, transparent); color: #9a6b00; }
+.pill.r { background: color-mix(in srgb, #d9434d 16%, transparent); color: #b4232c; }
+.note { color: var(--ink-2); font-size: 14.5px; margin-top: 14px; }
+
+/* stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+.stat { padding: 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.stat b { display: block; font-size: 30px; letter-spacing: -.02em; line-height: 1.1; }
+.stat span { color: var(--ink-2); font-size: 13.5px; }
+
+footer { padding: 40px 0 56px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 14px; }
+footer .wrap { display: grid; grid-template-columns: 1.3fr 1fr; gap: 32px; }
+footer pre { background: var(--bg-alt); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .hero .wrap, .two, footer .wrap { grid-template-columns: 1fr; }
+  .grid2 { grid-template-columns: 1fr; }
+  .arch-grid { grid-template-columns: 1fr; }
+  .blk.wide { grid-column: auto; }
+  .flow { grid-template-columns: 1fr 1fr; gap: 16px; }
+  .step:not(:last-child)::after { display: none; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  nav ul { display: none; }
+  nav .wrap { justify-content: space-between; }
+}
+@media (max-width: 520px) {
+  .wrap { padding: 0 16px; }
+  .flow, .stats { grid-template-columns: 1fr; }
+  .tbl { font-size: 13px; }
+  .tbl th, .tbl td { padding: 9px 10px; }
+  .scroll { overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="media/jetson_orin.png" alt="">so101-gap</a>
+    <ul>
+      <li><a href="#demo">Demo</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#generate">Generate</a></li>
+      <li><a href="#results">Results</a></li>
+      <li><a href="#start">Quick start</a></li>
+    </ul>
+    <a class="gh" href="https://github.com/kabilankb/so101-gap">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div>
+      <div class="tags">
+        <span class="tag nv">NVIDIA Jetson AGX Orin</span>
+        <span class="tag">Graph-as-Policy</span>
+        <span class="tag">LeRobot SO-101</span>
+        <span class="tag">MuJoCo</span>
+      </div>
+      <h1><span class="hl">Graph-as-Policy</span> for the LeRobot SO-101, on one Jetson AGX Orin</h1>
+      <p class="lede">An SO-101 arm sorts coloured cubes into a box. The policy isn't a black-box network: it's a typed graph of skills (perception, VLM reasoning, inverse kinematics, verification), and it runs entirely on a single Orin. You can write the graph by hand, or describe the task in a sentence and let a local LLM generate it.</p>
+      <div class="cta">
+        <a class="btn primary" href="#start">Quick start</a>
+        <a class="btn" href="#generate">Generate a graph from a sentence</a>
+        <a class="btn" href="https://github.com/kabilankb/so101-gap">View on GitHub</a>
+      </div>
+    </div>
+    <div class="hero-card">
+      <img class="orin" src="media/jetson_orin.png" alt="NVIDIA Jetson AGX Orin developer kit">
+      <div class="cap">Jetson AGX Orin 64 GB</div>
+      <div class="sub">L4T R39 · CUDA 13 · one <code>docker compose</code></div>
+      <div class="stack">
+        <div><b>Simulation</b><span>MuJoCo · LeRobot SO-101 tabletop</span></div>
+        <div><b>Graph runtime</b><span>Graph-as-Policy executor</span></div>
+        <div><b>Perception</b><span>Grounding DINO + SAM3</span></div>
+        <div><b>VLM / LLM</b><span>Nemotron-3-Nano-Omni · llama.cpp</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="demo">
+  <div class="wrap">
+    <p class="eyebrow">Demo</p>
+    <h2>Watch the graph execute</h2>
+    <p class="intro">Left: the SO-101's front camera. Right: the Graph-as-Policy workflow, with the node that is running outlined in orange. Each caption is built from that node's recorded output in the trace.</p>
+    <div class="demo-main"><img src="media/graph_run.gif" alt="Graph-as-Policy graph executing next to the SO-101 simulation" loading="lazy"></div>
+    <p class="demo-cap">Seed 2, order red → green → blue → yellow, sped up: all four cubes sorted into their own quadrants and each confirmed by the VLM. 262 s on the Jetson AGX Orin.</p>
+    <div class="grid2">
+      <figure>
+        <div class="frame"><img src="media/so101_sort.gif" alt="SO-101 sorting cubes into the green box" loading="lazy"></div>
+        <figcaption>The episode from the scene camera.</figcaption>
+      </figure>
+      <figure>
+        <div class="frame"><img src="media/jetson_gui.png" alt="Live MuJoCo viewer on the Jetson desktop" loading="lazy"></div>
+        <figcaption>The live MuJoCo viewer on the Jetson desktop (<code>--gui</code>).</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="how">
+  <div class="wrap">
+    <p class="eyebrow">How it works</p>
+    <h2>Everything runs on the Orin</h2>
+    <p class="intro">One compose file starts the language model and the graph viewer. Each episode runs the simulator, the graph executor and the vision models side by side on the same device.</p>
+
+    <div class="arch">
+      <div class="arch-head">
+        <img src="media/jetson_orin.png" alt="">
+        <div><b>NVIDIA Jetson AGX Orin</b><br><span>docker compose · services <code>vlm</code>, <code>viz</code>, <code>so101</code></span></div>
+      </div>
+      <div class="arch-grid">
+        <div class="blk">
+          <div class="k">Simulation</div>
+          <h3>SO-101 tabletop</h3>
+          <p>LeRobot's EnvHub MuJoCo scene: the SO-101, four 3 cm cubes and a green box. Front RGB-D, rendered with EGL.</p>
+        </div>
+        <div class="blk">
+          <div class="k">Graph runtime</div>
+          <h3>Graph-as-Policy</h3>
+          <p>Runs the typed workflow, routes on each step's exit, and records every node's inputs and outputs in a trace.</p>
+        </div>
+        <div class="blk">
+          <div class="k">Robot interface</div>
+          <h3>Driver + IK</h3>
+          <p>A GaP <code>RobotIO</code> driver and a damped-least-squares IK solver for the 5-DOF SO-101, both added by this package.</p>
+        </div>
+        <div class="blk">
+          <div class="k">Perception</div>
+          <h3>DINO → VLM → SAM3</h3>
+          <p>Grounding DINO proposes boxes, a VLM tournament picks the right one, and SAM3 plus depth give a 3D oriented box.</p>
+        </div>
+        <div class="blk">
+          <div class="k">Language</div>
+          <h3>Nemotron-3-Nano-Omni</h3>
+          <p>30B-A3B Q4_K_M on llama.cpp. It acts as the in-graph VLM, and writes graphs from sentences with thinking mode on.</p>
+        </div>
+        <div class="blk">
+          <div class="k">Inspect</div>
+          <h3>Graph viewer</h3>
+          <p>Shows each run's graph, node data and VLM prompts. Open it over an SSH tunnel at <code>localhost:9432</code>.</p>
+        </div>
+        <div class="blk wide">
+          <p><b>Memory:</b> the VLM takes about 32 GB and an episode about 15 GB (simulator, SAM3, DINO), so both fit together in the Orin's 64 GB of unified memory.</p>
+          <span class="port">:8080 VLM · :9432 viewer</span>
+        </div>
+      </div>
+    </div>
+
+    <h2 style="margin-top:56px">The graph</h2>
+    <p class="intro">Four subgraphs, each owned by an SO-101 skill. Every step exits with a label, and the top level routes on those labels. In the sorting demo, every outcome loops back to the next colour.</p>
+    <div class="flow">
+      <div class="step"><div class="card">
+        <div class="n">1</div><h3>Find the box</h3><div class="skill">so101-locating-container</div>
+        <p>Send the arm home for a clear view, then locate the green box in 3D.</p>
+        <div class="exits"><span class="ex ok">found</span><span class="ex bad">not_found</span></div>
+      </div></div>
+      <div class="step"><div class="card">
+        <div class="n">2</div><h3>Next cube</h3><div class="skill">so101-next-cube</div>
+        <p>Pick the next colour in the order that hasn't been verified yet, then find that cube.</p>
+        <div class="exits"><span class="ex ok">found</span><span class="ex ok">finished</span><span class="ex bad">not_found</span></div>
+      </div></div>
+      <div class="step"><div class="card">
+        <div class="n">3</div><h3>Pick</h3><div class="skill">so101-picking-cube</div>
+        <p>Top-down grasp, jaws tangential, 45% opening. The gripper reading confirms the hold.</p>
+        <div class="exits"><span class="ex ok">grasped</span><span class="ex bad">failed</span></div>
+      </div></div>
+      <div class="step"><div class="card">
+        <div class="n">4</div><h3>Place + verify</h3><div class="skill">so101-placing-in-container</div>
+        <p>Place in the colour's quadrant, go home, then the VLM checks the cube is inside the box.</p>
+        <div class="exits"><span class="ex ok">verified</span><span class="ex">missed</span><span class="ex bad">blocked</span></div>
+      </div></div>
+    </div>
+    <p class="loopnote">The loop never uses the simulator's ground truth. It ends when every colour is VLM-verified, after 3 tries per colour, or after 16 passes. Ground truth is only used in the final report.</p>
+  </div>
+</section>
+
+<section id="generate">
+  <div class="wrap">
+    <p class="eyebrow">Sentence → graph</p>
+    <h2>Generate a graph with a local LLM</h2>
+    <p class="intro">Graph-as-Policy's multi-agent codegen runs against Nemotron on the Jetson. The model only sees the five SO-101 skills, written as GaP skill bundles with contracts, canonical scripts and builder examples. A deterministic repair pass then fixes the small wiring slips a 30B model makes.</p>
+    <div class="two">
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>jetson · ~/workspace/so101-demo/so101-gap</span><button data-copy="gen">Copy</button></div>
+<pre id="gen"><span class="p">$ </span>.venv/bin/so101-gap-generate "pick the red cube and put it in the green box"
+<span class="c">  ... coordinator → subgraph agents → validate (about 5–15 min)</span>
+<span class="warn">  repair R0: added the missing top-level node for subgraph 'locate_red_cube'</span>
+<span class="warn">  repair R4: 'pick_red_cube' conditional edges now route on router_field 'exit'</span>
+<span class="ok">[so101-gap-generate] OK: graph/generated/pick_the_red_cube_.../task_00</span>
+  START → locate_container → locate_red_cube → pick_red_cube → place_red_cube → done
+
+<span class="p">$ </span>GRAPH=graph/generated/pick_the_red_cube_and_put_it_in_the_green_box/task_00 \
+    docker compose run --rm so101
+<span class="c">  [pick] holding (gripper 0.152)</span>
+<span class="c">  [verify] red cube in box? True ('YES The red cube is inside the green box.')</span>
+<span class="ok">[so101-gap] SUCCESS: 1/1 cubes in the box</span></pre>
+      </div>
+      <div>
+        <h3 style="margin-bottom:12px">Repair rules (each change is reported)</h3>
+        <ol class="rules">
+          <li><b>R0</b>Add the top-level node for a declared subgraph the model routed to but never created.</li>
+          <li><b>R1</b>Make sure the box-locating step exists and runs first (no duplicates).</li>
+          <li><b>R2</b>Fill in a single-cube colour left unset, using the colour named in the sentence.</li>
+          <li><b>R3</b>Drop top-level steps that can't be reached from START.</li>
+          <li><b>R4</b>Route subgraph exits on <code>router_field: "exit"</code>, which the runtime requires.</li>
+          <li><b>R5</b>Give every place step the same colour order, so each cube gets its own quadrant.</li>
+        </ol>
+        <p class="note">After repairing, the generator revalidates with GaP's own validator. <code>tests/test_repair.py</code> replays a real Nemotron output through these rules.</p>
+      </div>
+    </div>
+
+    <h3 style="margin:44px 0 14px">The SO-101 skill registry</h3>
+    <div class="scroll">
+    <table class="tbl">
+      <thead><tr><th>Skill</th><th>What it does</th><th>Exits</th></tr></thead>
+      <tbody>
+        <tr><td><code>so101-locating-container</code></td><td>Finds the green box (always the first step)</td><td><code>found</code> · <code>not_found</code></td></tr>
+        <tr><td><code>so101-locating-cube</code></td><td>Finds one named cube</td><td><code>found</code> · <code>not_found</code></td></tr>
+        <tr><td><code>so101-next-cube</code></td><td>Loop head for several cubes in an order</td><td><code>found</code> · <code>finished</code> · <code>not_found</code></td></tr>
+        <tr><td><code>so101-picking-cube</code></td><td>Top-down pick with the 5-DOF SO-101</td><td><code>grasped</code> · <code>failed</code></td></tr>
+        <tr><td><code>so101-placing-in-container</code></td><td>Places in the colour's quadrant, then a VLM check</td><td><code>verified</code> · <code>missed</code> · <code>blocked</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="results">
+  <div class="wrap">
+    <p class="eyebrow">Results</p>
+    <h2>Measured on the Jetson AGX Orin</h2>
+    <p class="intro">"Cubes in box" is the simulator's ground truth, checked after the run. During the run the graph itself only uses camera images and the gripper reading.</p>
+    <div class="stats">
+      <div class="stat"><b>4/4</b><span>hand-written graph, seeds 0, 2, 3</span></div>
+      <div class="stat"><b>1/1</b><span>sentence-generated graphs (blue, red)</span></div>
+      <div class="stat"><b>~2–3 s</b><span>per Nemotron VLM call on the Orin</span></div>
+      <div class="stat"><b>262 s</b><span>fastest full 4-cube sort</span></div>
+    </div>
+    <div class="scroll">
+    <table class="tbl">
+      <thead><tr><th>Graph</th><th>Task</th><th>Result</th><th>Time</th></tr></thead>
+      <tbody>
+        <tr><td>hand-written</td><td>seed 2, red → green → blue → yellow</td><td><span class="pill g">4/4</span></td><td>262 s</td></tr>
+        <tr><td>hand-written</td><td>seed 0, red → green → blue → yellow</td><td><span class="pill g">4/4</span></td><td>406 s</td></tr>
+        <tr><td>hand-written</td><td>seed 3, yellow → blue → green → red</td><td><span class="pill g">4/4</span></td><td>366 s</td></tr>
+        <tr><td>hand-written</td><td>seed 1</td><td><span class="pill y">3/4</span></td><td>452 s</td></tr>
+        <tr><td>hand-written</td><td>seed 4, blue → red → yellow → green</td><td><span class="pill r">2/4</span></td><td>494 s</td></tr>
+        <tr><td>generated</td><td>"pick the blue cube and put it in the green box"</td><td><span class="pill g">1/1</span></td><td>77 s</td></tr>
+        <tr><td>generated</td><td>"pick the red cube and put it in the green box"</td><td><span class="pill g">1/1</span></td><td>74 s</td></tr>
+        <tr><td>generated</td><td>"sort the cubes … yellow, red, blue"</td><td><span class="pill y">2/3</span></td><td>195 s</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="note"><b>Known weak spot:</b> the single front-view VLM check ("is the X cube in the box?") can misjudge a green cube against the green box, or a half-hidden cube, in either direction. In the generated 3-cube run, the model wrote the cubes out in sequence instead of using the retrying loop skill, so one missed grasp ended the run.</p>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <p class="eyebrow">Quick start</p>
+    <h2>Run it on your Jetson</h2>
+    <p class="intro">Tested on a Jetson AGX Orin 64 GB (L4T R39, CUDA 13, driver 595) with Docker and the NVIDIA runtime. SAM3's weights are gated, so you need a Hugging Face token with access.</p>
+    <div class="two">
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>install (once)</span><button data-copy="install">Copy</button></div>
+<pre id="install"><span class="p">$ </span>mkdir -p ~/workspace/so101-demo &amp;&amp; cd ~/workspace/so101-demo
+<span class="p">$ </span>git clone https://github.com/kabilankb/so101-gap.git &amp;&amp; cd so101-gap
+<span class="p">$ </span>huggingface-cli login            <span class="c"># SAM3 is gated</span>
+<span class="p">$ </span>./jetson/install.sh</pre>
+      </div>
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>run</span><button data-copy="run">Copy</button></div>
+<pre id="run"><span class="p">$ </span>docker compose up -d vlm viz     <span class="c"># Nemotron :8080 + viewer :9432</span>
+<span class="p">$ </span>docker compose run --rm so101    <span class="c"># one episode, live GUI</span>
+<span class="p">$ </span>SEED=3 ORDER=yellow,blue,green,red docker compose run --rm so101
+<span class="p">$ </span>GRAPH=graph/pick_one docker compose run --rm so101</pre>
+      </div>
+    </div>
+    <p class="note">To see the graph from your laptop, run <code>ssh -N -L 9432:127.0.0.1:9432 atlas@&lt;jetson-ip&gt;</code> and open <code>http://localhost:9432</code>. To build your own graph, start from <code>graph/build_pick_one.py</code>. The <a href="https://github.com/kabilankb/so101-gap#readme">README</a> has the full guide.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <div class="brand" style="margin-bottom:10px"><img src="media/jetson_orin.png" alt="">so101-gap</div>
+      <p>Apache-2.0. Built on <a href="https://github.com/graph-robots/graph-as-policy">Graph-as-Policy</a> and <a href="https://github.com/graph-robots/open-robot-skills">open-robot-skills</a>, LeRobot's <a href="https://huggingface.co/lerobot/so101-tabletop-mujoco">SO-101 tabletop scene</a> with MuJoCo Menagerie's SO-101, NVIDIA Nemotron on <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>, SAM3 and Grounding DINO. See <a href="https://github.com/kabilankb/so101-gap/blob/main/NOTICE.md">NOTICE.md</a>.</p>
+      <p>By <a href="https://github.com/kabilankb">Kabilan KB</a>.</p>
+    </div>
+    <div>
+      <p style="margin-top:0">If you use Graph-as-Policy, please cite:</p>
+<pre>@inproceedings{chen2026gap,
+  title     = {GaP: A Graph-as-Policy Multi-Agent Self-Learning
+               Harness for Variational Automation (VA) Tasks},
+  author    = {Chen, Kaiyuan and others},
+  booktitle = {Conference on Robot Learning (CoRL)},
+  year      = {2026}
+}</pre>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll("[data-copy]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    var el = document.getElementById(btn.dataset.copy);
+    var text = el.innerText.split("\n")
+      .filter(function (l) { return l.trim().startsWith("$") || /^\s{2,}\S/.test(l) && l.includes("docker"); })
+      .map(function (l) { return l.replace(/^\$\s?/, "").replace(/\s+#.*$/, ""); })
+      .join("\n");
+    navigator.clipboard.writeText(text).then(function () {
+      btn.textContent = "Copied";
+      setTimeout(function () { btn.textContent = "Copy"; }, 1400);
+    });
+  });
+});
+</script>
+</body>
+</html>

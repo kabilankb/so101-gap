@@ -1,0 +1,71 @@
+{
+  "skill": "so101-locating-cube",
+  "inputs": {},
+  "outputs": {
+    "target_obb": {
+      "$ref": "obb.obb"
+    }
+  },
+  "nodes": {
+    "observe": {
+      "type": "tool",
+      "tool": "robot.get_observation"
+    },
+    "perceive": {
+      "type": "script",
+      "script": "scripts/perceive_dino_vlm.py",
+      "inputs": {
+        "cameras": {
+          "$ref": "observe.cameras"
+        },
+        "object_name": "red cube",
+        "object_description": "a small solid red wooden cube (3 cm) lying on the table, outside the box. Not the large open green box/tray, and not a green, blue, yellow cube.",
+        "use_multiview": false
+      }
+    },
+    "obb": {
+      "type": "tool",
+      "tool": "geometry.filter_and_compute_obb",
+      "inputs": {
+        "points": {
+          "$ref": "perceive.cloud"
+        },
+        "eps": 0.008,
+        "min_samples": 5
+      }
+    },
+    "found": {
+      "type": "noop"
+    }
+  },
+  "edges": [
+    [
+      "START",
+      "observe"
+    ],
+    [
+      "observe",
+      "perceive"
+    ],
+    [
+      "perceive",
+      "obb"
+    ],
+    [
+      "obb",
+      "found"
+    ],
+    [
+      "found",
+      "END"
+    ]
+  ],
+  "conditional_edges": {},
+  "exit": {
+    "router_field": null,
+    "success_values": [
+      "found"
+    ]
+  },
+  "on_error": "not_found"
+}

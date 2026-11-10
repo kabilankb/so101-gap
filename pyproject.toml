@@ -53,6 +53,7 @@ Issues = "https://github.com/kabilankb/so101-gap/issues"
 
 [project.scripts]
 so101-gap-run = "so101_gap.run:main"
+so101-gap-generate = "so101_gap.generate:main"
 
 [build-system]
 requires = ["hatchling"]

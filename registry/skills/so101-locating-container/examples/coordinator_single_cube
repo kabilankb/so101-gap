@@ -1,0 +1,38 @@
+# WorkflowSpec for a SINGLE named cube, e.g. "pick the blue cube and put it in the green box".
+# Copy it; change only the colour in the subgraph names/descriptions. The subgraph agents then
+# fill each subgraph from its skill's "Builder code" (the cube colour goes into cube_sg there).
+from gap.builder import WorkflowSpec, START
+
+spec = WorkflowSpec(name="so101_pick_blue_cube", description="Pick the blue cube and put it in the green box.")
+
+spec.declare_subgraph("container_sg", skill="so101-locating-container",
+                      description="Locate the open green box.",
+                      inputs={}, outputs={"container_obb": "OrientedBoundingBox"},
+                      exit_success_values=["found"], on_error="not_found")
+spec.declare_subgraph("cube_sg", skill="so101-locating-cube",
+                      description="Locate the blue cube.",
+                      inputs={}, outputs={"target_obb": "OrientedBoundingBox"},
+                      exit_success_values=["found"], on_error="not_found")
+spec.declare_subgraph("pick_sg", skill="so101-picking-cube",
+                      description="Pick up the blue cube.",
+                      inputs={"target_obb": "OrientedBoundingBox"}, outputs={},
+                      exit_success_values=["grasped"], on_error="failed", stage="grasp")
+spec.declare_subgraph("place_sg", skill="so101-placing-in-container",
+                      description="Put the blue cube in the green box and verify it with the VLM.",
+                      inputs={"container_obb": "OrientedBoundingBox"}, outputs={},
+                      exit_success_values=["verified", "missed"], on_error="blocked", stage="place")
+
+# top-level node name == subgraph name; ref is the SUBGRAPH name (never the skill name)
+for sg in ("container_sg", "cube_sg", "pick_sg", "place_sg"):
+    spec.add_subgraph_node(sg, ref=sg)
+spec.add_end("done", status="success")
+spec.add_end("abort", status="failure",
+             recovery=[{"tool": "robot.set_gripper", "inputs": {"fraction": 0.45}},
+                       {"tool": "robot.go_home", "inputs": {}}])
+
+spec.add_edge(START, "container_sg")
+spec.add_conditional_edges("container_sg", {"found": "cube_sg", "not_found": "abort"}, router_field="exit")
+spec.add_conditional_edges("cube_sg", {"found": "pick_sg", "not_found": "abort"}, router_field="exit")
+spec.add_conditional_edges("pick_sg", {"grasped": "place_sg", "failed": "abort"}, router_field="exit")
+spec.add_conditional_edges("place_sg", {"verified": "done", "missed": "abort", "blocked": "abort"},
+                           router_field="exit")

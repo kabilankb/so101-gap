@@ -1,0 +1,237 @@
+{
+  "version": 3,
+  "meta": {
+    "name": "task_00",
+    "description": "pick the blue cube and put it in the green box"
+  },
+  "nodes": {
+    "locate_blue_cube": {
+      "type": "subgraph",
+      "ref": "locate_blue_cube_sg"
+    },
+    "pick_blue_cube": {
+      "type": "subgraph",
+      "ref": "pick_blue_cube_sg"
+    },
+    "place_blue_cube": {
+      "type": "subgraph",
+      "ref": "place_blue_cube_sg"
+    },
+    "done": {
+      "type": "end",
+      "status": "success"
+    },
+    "abort": {
+      "type": "end",
+      "status": "failure",
+      "recovery": [
+        {
+          "tool": "robot.open_gripper",
+          "inputs": {}
+        },
+        {
+          "tool": "robot.go_home",
+          "inputs": {}
+        }
+      ]
+    }
+  },
+  "edges": [
+    [
+      "START",
+      "locate_blue_cube"
+    ]
+  ],
+  "conditional_edges": {
+    "locate_blue_cube": {
+      "router_field": null,
+      "mapping": {
+        "found": "pick_blue_cube",
+        "not_found": "abort"
+      }
+    },
+    "pick_blue_cube": {
+      "router_field": null,
+      "mapping": {
+        "grasped": "place_blue_cube",
+        "failed": "abort"
+      }
+    },
+    "place_blue_cube": {
+      "router_field": null,
+      "mapping": {
+        "verified": "done",
+        "missed": "abort",
+        "blocked": "abort"
+      }
+    }
+  },
+  "subgraphs": {
+    "locate_blue_cube_sg": {
+      "skill": "so101-locating-cube",
+      "inputs": {},
+      "outputs": {
+        "target_obb": {
+          "$ref": "obb.obb"
+        }
+      },
+      "nodes": {
+        "observe": {
+          "type": "tool",
+          "tool": "robot.get_observation"
+        },
+        "perceive": {
+          "type": "script",
+          "inputs": {
+            "cameras": {
+              "$ref": "observe.cameras"
+            },
+            "object_name": "blue cube",
+            "object_description": "a small solid blue wooden cube (3 cm) lying on the table, outside the box. Not the large open green box/tray, and not a green, red, yellow cube.",
+            "use_multiview": false
+          },
+          "script": "scripts/perceive_dino_vlm.py"
+        },
+        "obb": {
+          "type": "tool",
+          "inputs": {
+            "points": {
+              "$ref": "perceive.cloud"
+            },
+            "eps": 0.008,
+            "min_samples": 5
+          },
+          "tool": "geometry.filter_and_compute_obb"
+        },
+        "found": {
+          "type": "noop"
+        }
+      },
+      "edges": [
+        [
+          "START",
+          "observe"
+        ],
+        [
+          "observe",
+          "perceive"
+        ],
+        [
+          "perceive",
+          "obb"
+        ],
+        [
+          "obb",
+          "found"
+        ],
+        [
+          "found",
+          "END"
+        ]
+      ],
+      "conditional_edges": {},
+      "exit": {
+        "router_field": null,
+        "success_values": [
+          "found"
+        ]
+      },
+      "on_error": "not_found"
+    },
+    "pick_blue_cube_sg": {
+      "skill": "so101-picking-cube",
+      "inputs": {
+        "target_obb": "OrientedBoundingBox"
+      },
+      "outputs": {},
+      "nodes": {
+        "pick": {
+          "type": "script",
+          "inputs": {
+            "target_obb": {
+              "$ref": "in.target_obb"
+            }
+          },
+          "script": "scripts/so101_pick.py"
+        },
+        "grasped": {
+          "type": "noop"
+        }
+      },
+      "edges": [
+        [
+          "START",
+          "pick"
+        ],
+        [
+          "pick",
+          "grasped"
+        ],
+        [
+          "grasped",
+          "END"
+        ]
+      ],
+      "conditional_edges": {},
+      "exit": {
+        "router_field": null,
+        "success_values": [
+          "grasped"
+        ]
+      },
+      "on_error": "failed",
+      "stage": "grasp"
+    },
+    "place_blue_cube_sg": {
+      "skill": "so101-placing-in-container",
+      "inputs": {
+        "container_obb": "OrientedBoundingBox"
+      },
+      "outputs": {},
+      "nodes": {
+        "put": {
+          "type": "script",
+          "inputs": {
+            "container_obb": {
+              "$ref": "in.container_obb"
+            },
+            "color": "blue",
+            "colors": "blue"
+          },
+          "script": "scripts/so101_place.py"
+        },
+        "verify": {
+          "type": "script",
+          "inputs": {
+            "color": "blue"
+          },
+          "script": "scripts/verify_in_container.py"
+        }
+      },
+      "edges": [
+        [
+          "START",
+          "put"
+        ],
+        [
+          "put",
+          "verify"
+        ],
+        [
+          "verify",
+          "END"
+        ]
+      ],
+      "conditional_edges": {},
+      "exit": {
+        "router_field": "verdict",
+        "success_values": [
+          "verified",
+          "missed"
+        ]
+      },
+      "on_error": "blocked",
+      "stage": "place"
+    }
+  }
+}

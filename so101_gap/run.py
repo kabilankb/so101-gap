@@ -38,6 +38,12 @@ def _graph_with_order(order: str | None, dst: Path, src: Path = GRAPH) -> tuple[
                 node["inputs"]["colors"] = order
             bound = node["inputs"]["colors"]
     wf_path.write_text(json.dumps(wf, indent=2) + "\n")
+    if bound is None:  # e.g. generated graphs: the order is a literal on the place node
+        for sg in wf.get("subgraphs", {}).values():
+            for node in sg.get("nodes", {}).values():
+                lit = node.get("inputs", {}).get("colors")
+                if node.get("script", "").endswith("so101_place.py") and isinstance(lit, str) and lit:
+                    bound = lit
     wanted = [c for c in (bound or ",".join(COLORS)).split(",") if c]
     return dst, wanted
 
@@ -98,7 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     conn = make_connector(seed=args.seed, gui=args.gui)
     t0 = time.time()
     try:
-        result = gap.execute(graph, conn, skills=args.skills, trace_dir=run_dir / "trace",
+        result = gap.execute(graph, conn, skills=[PKG_ROOT / "registry", args.skills],
+                             trace_dir=run_dir / "trace",
                              checkpoints="off")
     finally:
         cubes = conn.io.cube_states()

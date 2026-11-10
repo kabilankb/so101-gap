@@ -12,6 +12,8 @@
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-green">
 </p>
 
+<p align="center"><b>Project page: <a href="https://kabilankb.github.io/so101-gap/">kabilankb.github.io/so101-gap</a></b></p>
+
 <p align="center">
   <img src="docs/media/so101_sort.gif" width="420" alt="SO-101 sorting four cubes into the green box">
   &nbsp;
@@ -43,6 +45,7 @@ desktop and GaP's graph viewer in your browser.
 - [Usage](#usage)
 - [Results](#results)
 - [Make your own graph](#make-your-own-graph)
+- [Generate a graph from a sentence](#generate-a-graph-from-a-sentence-local-nemotron)
 - [How the SO-101 side works](#how-the-so-101-side-works)
 - [Known issues](#known-issues)
 - [Repository layout](#repository-layout)
@@ -292,6 +295,68 @@ Ideas that only need new scripts or rewiring:
 `--order` (or `ORDER=` in compose) overrides any graph that takes a `colors` input. Graphs without one run
 unchanged.
 
+## Generate a graph from a sentence (local Nemotron)
+
+You can also have Graph-as-Policy **write the graph for you**. Its multi-agent codegen (a coordinator
+plus one agent per subgraph, then validation) runs against the Nemotron model already serving on the
+Jetson, so nothing leaves the device:
+
+```bash
+docker compose up -d vlm                                    # Nemotron on :8080 (if not up)
+.venv/bin/so101-gap-generate "pick the blue cube and put it in the green box"
+# → graph/generated/pick_the_blue_cube_and_put_it_in_the_green_box/task_00  (validated)
+GRAPH=graph/generated/pick_the_blue_cube_and_put_it_in_the_green_box/task_00 docker compose run --rm so101
+```
+
+Verified on the Jetson: that sentence produced a validated graph, which picked and placed the blue cube
+(VLM-verified, **SUCCESS 1/1**, 77 s). Generation takes about 5–15 minutes with Nemotron's thinking mode.
+
+### The SO-101 skill registry
+
+The generator only knows the skills in `registry/skills/`, written in GaP's skill-bundle format: a
+`SKILL.md` contract and guidance, self-contained canonical scripts, prompts, and examples. It never sees
+the Franka/LIBERO skills.
+
+| Skill | What it does | Exits |
+|---|---|---|
+| `so101-locating-container` | Finds the green box (always the first step) | `found` / `not_found` |
+| `so101-locating-cube` | Finds one named cube | `found` / `not_found` |
+| `so101-next-cube` | Loop head for several cubes in an order | `found` / `finished` / `not_found` |
+| `so101-picking-cube` | Top-down pick with the 5-DOF SO-101 | `grasped` / `failed` |
+| `so101-placing-in-container` | Places in the colour's quadrant, then a VLM check | `verified` / `missed` / `blocked` |
+
+What each part of a skill does:
+
+- **The coordinator** sees each skill's description, which carries its exact `declare_subgraph`
+  contract.
+- **The subgraph agents** copy a "Builder code" block from the body.
+- **`registry/skills/so101-locating-container/examples/`** holds complete coordinator `WorkflowSpec`s for
+  a single cube and for the loop.
+- **`tests/test_registry.py`** builds both graph shapes from the skills' own snippets and runs them
+  through GaP's validator, so the guidance can't drift out of date.
+
+### Making a 30B local model reliable
+
+`so101-gap-generate` wraps `gap.agent.generate` with three settings and one repair pass:
+
+- **Thinking mode on, for codegen only.** It is set per request; the in-graph VLM calls stay fast.
+- **Restricted catalog.** Only the 5 SO-101 skills plus the vision tool bundles are offered.
+- **No checkpoint agent.** Checkpoints need simulator ground truth, which this connector doesn't expose.
+- **Repair pass** (`so101_gap/repair.py`). It fixes the top-level wiring slips we observed, in the way
+  the skill contracts prescribe, and prints every change it makes:
+  - R1: insert or wire the box-locating subgraph first.
+  - R2: bind a single-cube colour that was left unbound.
+  - R3: drop unreachable nodes.
+  - R4: set `router_field: "exit"` on subgraph routes.
+
+After repairing, it revalidates with GaP's validator. `tests/test_repair.py` replays a real Nemotron
+output through the repair pass.
+
+`gap skills check --skills registry` reports this registry's vision and VLM tools as "unknown", because
+the checker validates each registry on its own and those tools live in open-robot-skills. The merged
+loader that codegen and the runtime use resolves them, and `tests/test_registry.py` checks the merged
+view.
+
 ## How the SO-101 side works
 
 GaP ships Franka and UR connectors. This package adds the SO-101 through GaP's `RobotIO` boundary:
@@ -334,7 +399,8 @@ the driver only moves joints and returns measurements, and all kinematics live i
 
 ```
 so101-gap/
-├── so101_gap/              driver, IK, connector, so101-gap-run CLI
+├── so101_gap/              driver, IK, connector, so101-gap-run + so101-gap-generate CLIs, repair
+├── registry/skills/        SO-101 skill bundles for GaP codegen (SKILL.md + scripts + examples)
 ├── graph/
 │   ├── build_workflow.py   builds color_sort/ (the main demo)
 │   ├── build_pick_one.py   builds pick_one/ (template for your own graphs)

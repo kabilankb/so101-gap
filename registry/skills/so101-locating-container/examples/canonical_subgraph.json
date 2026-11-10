@@ -1,0 +1,77 @@
+{
+  "skill": "so101-locating-container",
+  "inputs": {},
+  "outputs": {
+    "container_obb": {
+      "$ref": "obb.obb"
+    }
+  },
+  "nodes": {
+    "home": {
+      "type": "tool",
+      "tool": "robot.go_home"
+    },
+    "observe": {
+      "type": "tool",
+      "tool": "robot.get_observation"
+    },
+    "perceive": {
+      "type": "script",
+      "script": "scripts/perceive_dino_vlm.py",
+      "inputs": {
+        "cameras": {
+          "$ref": "observe.cameras"
+        },
+        "object_name": "green box",
+        "object_description": "the large open green box / tray with low walls that the cubes are sorted into. Not a small cube.",
+        "use_multiview": false
+      }
+    },
+    "obb": {
+      "type": "tool",
+      "tool": "geometry.filter_and_compute_obb",
+      "inputs": {
+        "points": {
+          "$ref": "perceive.cloud"
+        }
+      }
+    },
+    "found": {
+      "type": "noop"
+    }
+  },
+  "edges": [
+    [
+      "START",
+      "home"
+    ],
+    [
+      "home",
+      "observe"
+    ],
+    [
+      "observe",
+      "perceive"
+    ],
+    [
+      "perceive",
+      "obb"
+    ],
+    [
+      "obb",
+      "found"
+    ],
+    [
+      "found",
+      "END"
+    ]
+  ],
+  "conditional_edges": {},
+  "exit": {
+    "router_field": null,
+    "success_values": [
+      "found"
+    ]
+  },
+  "on_error": "not_found"
+}

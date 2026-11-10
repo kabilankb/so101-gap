@@ -1,0 +1,43 @@
+{
+  "skill": "so101-picking-cube",
+  "inputs": {
+    "target_obb": "OrientedBoundingBox"
+  },
+  "outputs": {},
+  "nodes": {
+    "pick": {
+      "type": "script",
+      "script": "scripts/so101_pick.py",
+      "inputs": {
+        "target_obb": {
+          "$ref": "in.target_obb"
+        }
+      }
+    },
+    "grasped": {
+      "type": "noop"
+    }
+  },
+  "edges": [
+    [
+      "START",
+      "pick"
+    ],
+    [
+      "pick",
+      "grasped"
+    ],
+    [
+      "grasped",
+      "END"
+    ]
+  ],
+  "conditional_edges": {},
+  "exit": {
+    "router_field": null,
+    "success_values": [
+      "grasped"
+    ]
+  },
+  "on_error": "failed"
+}

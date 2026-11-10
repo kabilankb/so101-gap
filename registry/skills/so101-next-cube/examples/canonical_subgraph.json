@@ -1,0 +1,114 @@
+{
+  "skill": "so101-next-cube",
+  "inputs": {},
+  "outputs": {
+    "target_obb": {
+      "$ref": "obb.obb"
+    },
+    "color": {
+      "$ref": "choose.color"
+    }
+  },
+  "nodes": {
+    "choose": {
+      "type": "script",
+      "script": "scripts/choose_color.py",
+      "inputs": {
+        "colors": "red,green,blue,yellow"
+      }
+    },
+    "route": {
+      "type": "router",
+      "script": "scripts/route_choice.py",
+      "inputs": {
+        "finished": {
+          "$ref": "choose.finished"
+        }
+      }
+    },
+    "observe": {
+      "type": "tool",
+      "tool": "robot.get_observation"
+    },
+    "perceive": {
+      "type": "script",
+      "script": "scripts/perceive_dino_vlm.py",
+      "inputs": {
+        "cameras": {
+          "$ref": "observe.cameras"
+        },
+        "object_name": {
+          "$ref": "choose.object_name"
+        },
+        "object_description": {
+          "$ref": "choose.object_description"
+        },
+        "use_multiview": false
+      }
+    },
+    "obb": {
+      "type": "tool",
+      "tool": "geometry.filter_and_compute_obb",
+      "inputs": {
+        "points": {
+          "$ref": "perceive.cloud"
+        },
+        "eps": 0.008,
+        "min_samples": 5
+      }
+    },
+    "found": {
+      "type": "noop"
+    },
+    "finished": {
+      "type": "noop"
+    }
+  },
+  "edges": [
+    [
+      "START",
+      "choose"
+    ],
+    [
+      "choose",
+      "route"
+    ],
+    [
+      "observe",
+      "perceive"
+    ],
+    [
+      "perceive",
+      "obb"
+    ],
+    [
+      "obb",
+      "found"
+    ],
+    [
+      "found",
+      "END"
+    ],
+    [
+      "finished",
+      "END"
+    ]
+  ],
+  "conditional_edges": {
+    "route": {
+      "router_field": null,
+      "mapping": {
+        "pick": "observe",
+        "finished": "finished"
+      }
+    }
+  },
+  "exit": {
+    "router_field": null,
+    "success_values": [
+      "found",
+      "finished"
+    ]
+  },
+  "on_error": "not_found"
+}

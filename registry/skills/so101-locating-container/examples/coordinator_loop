@@ -1,0 +1,39 @@
+# WorkflowSpec for SEVERAL cubes in an order, e.g. "sort the cubes into the box: yellow, red, green, blue"
+# or "put all the cubes in the box". Copy it. The colour ORDER is a literal the next_sg subgraph agent
+# writes on its choose node (from the so101-next-cube skill); place_sg receives the colour by name.
+from gap.builder import WorkflowSpec, START
+
+spec = WorkflowSpec(name="so101_sort_cubes", description="Put the cubes in the green box in the given order.")
+
+spec.declare_subgraph("container_sg", skill="so101-locating-container",
+                      description="Locate the open green box once.",
+                      inputs={}, outputs={"container_obb": "OrientedBoundingBox"},
+                      exit_success_values=["found"], on_error="not_found")
+spec.declare_subgraph("next_sg", skill="so101-next-cube",
+                      description="Loop head: choose the next colour in the order and locate that cube.",
+                      inputs={}, outputs={"target_obb": "OrientedBoundingBox", "color": "str"},
+                      exit_success_values=["found", "finished"], on_error="not_found")
+spec.declare_subgraph("pick_sg", skill="so101-picking-cube",
+                      description="Pick up the chosen cube.",
+                      inputs={"target_obb": "OrientedBoundingBox"}, outputs={},
+                      exit_success_values=["grasped"], on_error="failed", stage="grasp")
+spec.declare_subgraph("place_sg", skill="so101-placing-in-container",
+                      description="Put the cube in its colour's quadrant of the box and verify it.",
+                      inputs={"container_obb": "OrientedBoundingBox", "color": "str"}, outputs={},
+                      exit_success_values=["verified", "missed"], on_error="blocked", stage="place")
+
+for sg in ("container_sg", "next_sg", "pick_sg", "place_sg"):
+    spec.add_subgraph_node(sg, ref=sg)
+spec.add_end("done", status="success")
+spec.add_end("abort", status="failure",
+             recovery=[{"tool": "robot.set_gripper", "inputs": {"fraction": 0.45}},
+                       {"tool": "robot.go_home", "inputs": {}}])
+
+spec.add_edge(START, "container_sg")
+spec.add_conditional_edges("container_sg", {"found": "next_sg", "not_found": "abort"}, router_field="exit")
+# the loop: every outcome after the loop head returns to it; only "finished" leaves (success)
+spec.add_conditional_edges("next_sg", {"found": "pick_sg", "finished": "done", "not_found": "next_sg"},
+                           router_field="exit")
+spec.add_conditional_edges("pick_sg", {"grasped": "place_sg", "failed": "next_sg"}, router_field="exit")
+spec.add_conditional_edges("place_sg", {"verified": "next_sg", "missed": "next_sg", "blocked": "next_sg"},
+                           router_field="exit")
