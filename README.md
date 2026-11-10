@@ -38,6 +38,7 @@ desktop and GaP's graph viewer in your browser.
 ## Contents
 
 - [The graph](#the-graph)
+- [Example run](#example-run)
 - [Quick start](#quick-start-jetson)
 - [Usage](#usage)
 - [Results](#results)
@@ -66,6 +67,60 @@ START → box ──found──→ next ──pick──→ grasp ──grasped�
 
 The loop never reads the simulator's ground truth. It stops when every colour is VLM-verified, after
 3 attempts per colour, or after 16 passes. Ground truth is used only in the final `report.json`.
+
+## Example run
+
+<p align="center">
+  <img src="docs/media/graph_run.gif" width="860" alt="GaP graph executing next to the SO-101 sim">
+  <br><sub>Seed 2 on the Jetson AGX Orin (sped up). Left: the front camera. Right: the GaP workflow, with
+  the node currently running ringed in orange. Bottom: what that node just did, taken from the trace.</sub>
+</p>
+
+```bash
+SEED=2 docker compose run --rm so101       # or: ./jetson/run_demo.sh --seed 2 --gui
+```
+
+The log follows the graph: the loop head picks the next colour, perception finds that cube, then the
+graph picks it, places it in its quadrant, and the VLM verifies it.
+
+```text
+[so101-gap] seed=2 order=red,green,blue,yellow vlm=http://127.0.0.1:8080/v1 -> outputs/so101_sort_..._seed2
+--- Subgraph 'box_sg' ---
+VLM tournament selected box 0 for 'green box' from 6 detections
+[sort] pass 1: done=[] next=red attempt=1
+VLM tournament selected box 1 for 'red cube' from 6 detections
+[pick] cube at (0.238, -0.098, 0.015) jaw yaw 60 deg
+[pick] holding (gripper 0.151)
+[place] red -> slot 0 at (0.182, 0.089)
+[verify] red in box? True ('YES\nThe red cube is inside the green box.')
+[sort] pass 2: done=['red'] next=green attempt=1
+...
+[verify] yellow in box? True ('YES\nThe yellow cube is inside the green box.')
+[sort] pass 5: done=['red', 'green', 'blue', 'yellow'] next=- attempt=-
+{"graph_exit": "success", "cubes_in_box": ["red", "green", "blue", "yellow"], "all_sorted": true, "wall_s": 262.2}
+[so101-gap] SUCCESS: 4/4 cubes in the box; video outputs/so101_sort_..._seed2/run_video.mp4
+```
+
+`report.json` (abridged):
+
+```json
+{
+  "seed": 2,
+  "order": ["red", "green", "blue", "yellow"],
+  "graph_exit": "success",
+  "cubes_in_box": ["red", "green", "blue", "yellow"],
+  "all_sorted": true,
+  "cubes": { "red": { "pos": [0.185, 0.088, 0.019], "in_box": true }, "...": "..." },
+  "wall_s": 262.2,
+  "sim_s": 72.4
+}
+```
+
+To make the same animation for any run (this needs the graph-as-policy runtime for `gap.viz`):
+
+```bash
+.venv/bin/python docs/make_graph_gif.py outputs/so101_sort_<time>_seed<N> docs/media/graph_run.gif
+```
 
 ## Quick start (Jetson)
 
@@ -220,7 +275,9 @@ so101-gap/
 │   └── docker/Dockerfile   slim runtime image (GL/EGL/GLFW libs; envs are mounted)
 ├── docker-compose.yml      vlm, viz, so101
 ├── tests/                  graph + IK tests (CPU)
-└── docs/media/
+└── docs/
+    ├── make_graph_gif.py   animated graph-execution GIF from any run's trace + video
+    └── media/
 ```
 
 ## Development
