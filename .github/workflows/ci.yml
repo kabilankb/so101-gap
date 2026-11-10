@@ -14,7 +14,7 @@ jobs:
       - name: Tests (CPU)
         run: |
           uv venv -p 3.11
-          uv pip install pytest numpy scipy mujoco==3.3.7 gymnasium \
+          uv pip install pytest pyyaml numpy scipy mujoco==3.3.7 gymnasium \
             "graph-as-policy-core @ git+https://github.com/graph-robots/graph-as-policy@53e8049#subdirectory=gap-core"
           uv pip install --no-deps -e .
           .venv/bin/pytest -q
