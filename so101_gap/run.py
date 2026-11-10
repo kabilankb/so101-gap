@@ -15,6 +15,7 @@ import logging
 import os
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -71,7 +72,11 @@ def main(argv: list[str] | None = None) -> int:
 
     run_dir = Path(args.out) / time.strftime(f"so101_sort_%Y%m%d_%H%M%S_seed{args.seed}")
     run_dir.mkdir(parents=True)
-    graph = _graph_with_order(order, run_dir / "graph")
+    # Execute from a temporary copy (with the chosen order bound): the trace keeps its own copy of
+    # the workflow + scripts, and a second workflow.json under the run dir would make the graph
+    # viewer list every run twice.
+    tmp = tempfile.TemporaryDirectory(prefix="so101_graph_")
+    graph = _graph_with_order(order, Path(tmp.name) / "color_sort")
     print(f"[so101-gap] seed={args.seed} order={order} vlm={args.vlm_url} -> {run_dir}", flush=True)
 
     conn = make_connector(seed=args.seed, gui=args.gui)
@@ -83,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         cubes = conn.io.cube_states()
         frames = conn.io.frames
         conn.close()
+        tmp.cleanup()
     wall = time.time() - t0
 
     iio.mimsave(run_dir / "run_video.mp4", frames, fps=15, macro_block_size=1)

@@ -1,5 +1,6 @@
 .venv/
 outputs/
+outputs_archive/
 scratch/
 __pycache__/
 *.pyc

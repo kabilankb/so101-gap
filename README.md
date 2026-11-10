@@ -199,9 +199,10 @@ Each episode writes `outputs/so101_sort_<time>_seed<N>/`:
 | File | Content |
 |---|---|
 | `run_video.mp4` | Front camera, 15 fps |
-| `trace/` | The GaP trace (what the viewer shows) |
+| `trace/` | The GaP trace (what the viewer shows), including the exact workflow and scripts that ran |
 | `report.json` | Graph exit, ground-truth cubes in the box, timings |
-| `graph/` | The exact workflow that ran (with the chosen colour order) |
+
+Old runs can be moved to `outputs_archive/`, which the viewer doesn't scan, to keep its run list short.
 
 ## Results
 
