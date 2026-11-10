@@ -45,3 +45,12 @@ def test_colour_order_bound_at_both_call_sites():
     nodes = _wf()["nodes"]
     assert nodes["next"]["inputs"]["colors"] == nodes["place"]["inputs"]["colors"]
     assert set(nodes["next"]["inputs"]["colors"].split(",")) == {"red", "green", "blue", "yellow"}
+
+
+def test_pick_one_template_matches_builder():
+    ns = runpy.run_path(str(ROOT / "graph" / "build_pick_one.py"), run_name="not_main")
+    committed = json.loads((ROOT / "graph" / "pick_one" / "workflow.json").read_text())
+    assert ns["build"]("red") == committed
+    for name in ns["SCRIPTS"]:
+        assert (ROOT / "graph" / "pick_one" / "scripts" / name).read_text() == \
+               (GRAPH / "scripts" / name).read_text()

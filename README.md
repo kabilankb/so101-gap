@@ -42,6 +42,7 @@ desktop and GaP's graph viewer in your browser.
 - [Quick start](#quick-start-jetson)
 - [Usage](#usage)
 - [Results](#results)
+- [Make your own graph](#make-your-own-graph)
 - [How the SO-101 side works](#how-the-so-101-side-works)
 - [Known issues](#known-issues)
 - [Repository layout](#repository-layout)
@@ -162,6 +163,7 @@ docker compose up -d vlm viz                                     # always-on ser
 docker compose run --rm so101                                    # seed 0, order red,green,blue,yellow, GUI
 SEED=3 ORDER=yellow,blue,green,red docker compose run --rm so101
 GUI= docker compose run --rm so101                               # headless
+GRAPH=graph/pick_one docker compose run --rm so101               # a different graph
 docker compose down
 ```
 
@@ -224,6 +226,72 @@ Missed grasps are caught by the gripper reading and usually succeed on retry.
 Before any perception was added, the motion scripts alone, fed ground-truth cube poses, sorted 4/4 on
 seeds 0, 3 and 5.
 
+## Make your own graph
+
+A graph is a folder holding a `workflow.json` and the node scripts it uses. Start from the template, which
+is the smallest useful graph: pick one named cube and put it in the box.
+
+```
+START → box ─found─→ target ─found─→ grasp ─grasped─→ place ─verified─→ done ✓
+          └────────────┴───────────────┴─────────────────┴──(anything else)──→ abort ✗
+```
+
+**1. Generate the template and run it**
+
+```bash
+python3 graph/build_pick_one.py --color blue          # writes graph/pick_one/
+GRAPH=graph/pick_one docker compose run --rm so101     # or: ./jetson/run_demo.sh --graph graph/pick_one --gui
+```
+
+**2. Copy it and change it**
+
+```bash
+cp graph/build_pick_one.py graph/build_my_task.py      # edit, then:
+python3 graph/build_my_task.py --out graph/my_task
+.venv/bin/gap run graph/my_task --validate-only        # typed check before touching the robot
+GRAPH=graph/my_task docker compose run --rm so101
+```
+
+Edit the builder rather than `workflow.json` by hand. A graph has these parts:
+
+| Part | Meaning |
+|---|---|
+| `nodes` | Top-level steps: one per subgraph, plus the `done` and `abort` ends |
+| `conditional_edges` | Where each subgraph goes next, keyed by its exit label (`found`, `grasped`, `failed`, …) |
+| `subgraphs.<name>.nodes` | `tool` (call a tool), `script` (run `scripts/<file>.py`), `router` (a script that returns `{"route": ...}`), `noop` (exit marker) |
+| `inputs` / `outputs` | Typed values passed between subgraphs by name, e.g. `box_sg` produces `container_obb` and `place_sg` consumes it |
+| `on_error` | The exit label used when a node in the subgraph raises |
+
+A node script is a `run(ctx, ...)` function. Its arguments come from the node's `inputs`, it returns a dict
+of outputs, and it calls tools through `ctx.tool(...)`:
+
+```python
+def run(ctx, target_obb, lift=0.06):
+    ctx.tool("robot.set_gripper", fraction=0.45)
+    ...
+    ctx.tool("robot.go_to_pose_cartesian", pose=pose)
+    return {"done": True}
+```
+
+**Building blocks you can reuse**
+
+| Kind | What's available |
+|---|---|
+| Robot | `robot.get_observation`, `robot.go_to_pose_cartesian`, `robot.go_to_pose`, `robot.set_gripper`, `robot.open_gripper` / `close_gripper`, `robot.get_ee_pose`, `robot.get_gripper`, `robot.go_home` |
+| Vision | `perceive_dino_vlm.py` (any object by name and description: DINO → VLM tournament → SAM3 → point cloud), `geometry.filter_and_compute_obb` |
+| VLM | `vlm.query`, `vlm.query_yes_no` (Nemotron on the Jetson) |
+| SO-101 motion | `so101_motion.py` helpers: `down_pose`, `transit`, `move`, `tangential_yaw` |
+| Scripts | `so101_pick.py`, `so101_place.py`, `verify_color.py` |
+
+Ideas that only need new scripts or rewiring:
+
+- **Stack the cubes:** place on the previous cube's 3D box instead of the box quadrant.
+- **Line them up:** place at fixed table positions.
+- **Sort by a spoken order:** let `vlm.query` turn a sentence into the `colors` list.
+
+`--order` (or `ORDER=` in compose) overrides any graph that takes a `colors` input. Graphs without one run
+unchanged.
+
 ## How the SO-101 side works
 
 GaP ships Franka and UR connectors. This package adds the SO-101 through GaP's `RobotIO` boundary:
@@ -268,8 +336,10 @@ the driver only moves joints and returns measurements, and all kinematics live i
 so101-gap/
 ├── so101_gap/              driver, IK, connector, so101-gap-run CLI
 ├── graph/
-│   ├── build_workflow.py   source of truth for the workflow (regenerates workflow.json)
-│   └── color_sort/         GaP v3 workflow + node scripts
+│   ├── build_workflow.py   builds color_sort/ (the main demo)
+│   ├── build_pick_one.py   builds pick_one/ (template for your own graphs)
+│   ├── color_sort/         GaP v3 workflow + node scripts
+│   └── pick_one/           one-cube pick-and-place
 ├── jetson/
 │   ├── install.sh          pinned install
 │   ├── run_vlm.sh  run_viz.sh  run_demo.sh

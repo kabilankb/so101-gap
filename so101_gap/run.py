@@ -24,21 +24,31 @@ GRAPH = PKG_ROOT / "graph" / "color_sort"
 COLORS = ("red", "green", "blue", "yellow")
 
 
-def _graph_with_order(order: str, dst: Path) -> Path:
-    shutil.copytree(GRAPH, dst)
+def _graph_with_order(order: str | None, dst: Path, src: Path = GRAPH) -> tuple[Path, list[str]]:
+    """Copy a workflow dir. With ``order``, bind it at every top-level call site that takes a
+    ``colors`` input; without, keep the graph's own binding. Returns the copy and the colours
+    the graph is set to place (all four if it declares none)."""
+    shutil.copytree(src, dst)
     wf_path = dst / "workflow.json"
     wf = json.loads(wf_path.read_text())
-    for node in ("next", "place"):
-        wf["nodes"][node]["inputs"]["colors"] = order
+    bound = None
+    for node in wf["nodes"].values():
+        if "colors" in node.get("inputs", {}):
+            if order is not None:
+                node["inputs"]["colors"] = order
+            bound = node["inputs"]["colors"]
     wf_path.write_text(json.dumps(wf, indent=2) + "\n")
-    return dst
+    wanted = [c for c in (bound or ",".join(COLORS)).split(",") if c]
+    return dst, wanted
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seed", type=int, default=0, help="scene randomization seed")
-    ap.add_argument("--order", default="red,green,blue,yellow",
-                    help="colour order (comma-separated subset/permutation of red,green,blue,yellow)")
+    ap.add_argument("--graph", type=Path, default=GRAPH,
+                    help="workflow directory to run (default: graph/color_sort)")
+    ap.add_argument("--order", default=None,
+                    help="colour order, e.g. yellow,blue,green,red (default: the graph's own binding)")
     ap.add_argument("--out", default=str(PKG_ROOT / "outputs"), help="output root")
     ap.add_argument("--skills",
                     default=os.environ.get("GAP_SKILLS_PATH", str(PKG_ROOT.parent / "open-robot-skills")),
@@ -49,10 +59,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="open the live MuJoCo viewer window (needs a desktop session / $DISPLAY)")
     args = ap.parse_args(argv)
 
-    order = ",".join(c.strip() for c in args.order.split(",") if c.strip())
-    bad = [c for c in order.split(",") if c not in COLORS]
-    if bad or not order:
-        ap.error(f"unknown colours {bad}; choose from {COLORS}")
+    order = None
+    if args.order:
+        order = ",".join(c.strip() for c in args.order.split(",") if c.strip())
+        bad = [c for c in order.split(",") if c not in COLORS]
+        if bad or not order:
+            ap.error(f"unknown colours {bad}; choose from {COLORS}")
 
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.update({
@@ -76,8 +88,12 @@ def main(argv: list[str] | None = None) -> int:
     # the workflow + scripts, and a second workflow.json under the run dir would make the graph
     # viewer list every run twice.
     tmp = tempfile.TemporaryDirectory(prefix="so101_graph_")
-    graph = _graph_with_order(order, Path(tmp.name) / "color_sort")
-    print(f"[so101-gap] seed={args.seed} order={order} vlm={args.vlm_url} -> {run_dir}", flush=True)
+    src = args.graph if args.graph.is_absolute() else (Path.cwd() / args.graph)
+    if not (src / "workflow.json").is_file():
+        ap.error(f"no workflow.json in {src}")
+    graph, wanted = _graph_with_order(order, Path(tmp.name) / src.name, src)
+    print(f"[so101-gap] graph={src.name} seed={args.seed} order={','.join(wanted)} vlm={args.vlm_url}"
+          f" -> {run_dir}", flush=True)
 
     conn = make_connector(seed=args.seed, gui=args.gui)
     t0 = time.time()
@@ -92,7 +108,6 @@ def main(argv: list[str] | None = None) -> int:
     wall = time.time() - t0
 
     iio.mimsave(run_dir / "run_video.mp4", frames, fps=15, macro_block_size=1)
-    wanted = order.split(",")
     sorted_ok = [c for c in wanted if cubes[c]["in_box"]]
     report = {
         "seed": args.seed, "order": wanted, "graph_exit": result.exit_status,
@@ -105,7 +120,14 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps({k: report[k] for k in ("graph_exit", "cubes_in_box", "all_sorted", "wall_s")}))
     print(f"[so101-gap] {'SUCCESS' if report['all_sorted'] else 'INCOMPLETE'}: "
           f"{len(sorted_ok)}/{len(wanted)} cubes in the box; video {report['video']}")
-    return 0 if report["all_sorted"] else 1
+    rc = 0 if report["all_sorted"] else 1
+    # Everything is written and closed. Skip interpreter teardown: leftover MuJoCo/PyOpenGL
+    # EGL finalizers would otherwise run on the main thread and print harmless but noisy
+    # EGLError tracebacks (the contexts belong to the sim-owner thread).
+    logging.shutdown()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(rc)
 
 
 if __name__ == "__main__":

@@ -184,5 +184,8 @@ class So101TabletopIO:
             self._renderer.close()
             self._vid_renderer.close()
             self.env.close()
+            # drop the last references here, on the thread that owns the EGL contexts,
+            # so their finalizers don't run (and fail) on the main thread at exit
+            self.viewer = self._renderer = self._vid_renderer = None
         self._on_owner(_close)
         self._owner.shutdown()
