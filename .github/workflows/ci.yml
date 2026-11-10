@@ -1,0 +1,20 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Fetch the SO-101 scene
+        run: uvx --from huggingface_hub hf download lerobot/so101-tabletop-mujoco
+             --revision 43a427cc783cd2c09445cf341bea6bb5bd9c22d1 --local-dir ../so101-tabletop-mujoco
+      - name: Lint
+        run: uvx ruff check .
+      - name: Tests (CPU)
+        run: |
+          uv venv -p 3.11
+          uv pip install pytest numpy scipy mujoco==3.3.7 gymnasium \
+            "graph-as-policy-core @ git+https://github.com/graph-robots/graph-as-policy@53e8049#subdirectory=gap-core"
+          uv pip install --no-deps -e .
+          .venv/bin/pytest -q

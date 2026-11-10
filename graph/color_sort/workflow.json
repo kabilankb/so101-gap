@@ -1,0 +1,411 @@
+{
+  "version": 3,
+  "meta": {
+    "name": "so101_color_sort",
+    "description": "SO-101 (lerobot/so101-tabletop-mujoco): pick the coloured cubes one at a time in the requested colour order and place each in its own quadrant of the green box. Perception: Grounding DINO + VLM tournament + SAM3 on the front RGB-D camera. Each placement is verified by the VLM; misses are retried with fresh perception."
+  },
+  "nodes": {
+    "box": {
+      "type": "subgraph",
+      "ref": "box_sg"
+    },
+    "next": {
+      "type": "subgraph",
+      "ref": "next_sg",
+      "inputs": {
+        "colors": "red,green,blue,yellow"
+      }
+    },
+    "grasp": {
+      "type": "subgraph",
+      "ref": "grasp_sg"
+    },
+    "place": {
+      "type": "subgraph",
+      "ref": "place_sg",
+      "inputs": {
+        "colors": "red,green,blue,yellow"
+      }
+    },
+    "done": {
+      "type": "end",
+      "status": "success"
+    },
+    "abort": {
+      "type": "end",
+      "status": "failure",
+      "recovery": [
+        {
+          "tool": "robot.open_gripper",
+          "inputs": {}
+        },
+        {
+          "tool": "robot.go_home",
+          "inputs": {}
+        }
+      ]
+    }
+  },
+  "edges": [
+    [
+      "START",
+      "box"
+    ]
+  ],
+  "conditional_edges": {
+    "box": {
+      "router_field": "exit",
+      "mapping": {
+        "found": "next",
+        "not_found": "abort"
+      }
+    },
+    "next": {
+      "router_field": "exit",
+      "mapping": {
+        "found": "grasp",
+        "finished": "done",
+        "not_found": "next"
+      }
+    },
+    "grasp": {
+      "router_field": "exit",
+      "mapping": {
+        "grasped": "place",
+        "failed": "next"
+      }
+    },
+    "place": {
+      "router_field": "exit",
+      "mapping": {
+        "verified": "next",
+        "missed": "next",
+        "blocked": "next"
+      }
+    }
+  },
+  "subgraphs": {
+    "box_sg": {
+      "skill": "perceiving-objects",
+      "inputs": {},
+      "outputs": {
+        "container_obb": {
+          "$ref": "obb.obb"
+        }
+      },
+      "nodes": {
+        "home": {
+          "type": "tool",
+          "tool": "robot.go_home"
+        },
+        "observe": {
+          "type": "tool",
+          "tool": "robot.get_observation"
+        },
+        "perceive": {
+          "type": "script",
+          "script": "scripts/perceive_dino_vlm.py",
+          "inputs": {
+            "cameras": {
+              "$ref": "observe.cameras"
+            },
+            "object_name": "green box",
+            "object_description": "the large open green box / tray with low walls that the cubes are sorted into. Not a small cube.",
+            "use_multiview": false
+          }
+        },
+        "obb": {
+          "type": "tool",
+          "tool": "geometry.filter_and_compute_obb",
+          "inputs": {
+            "points": {
+              "$ref": "perceive.cloud"
+            }
+          }
+        },
+        "found": {
+          "type": "noop"
+        }
+      },
+      "edges": [
+        [
+          "START",
+          "home"
+        ],
+        [
+          "home",
+          "observe"
+        ],
+        [
+          "observe",
+          "perceive"
+        ],
+        [
+          "perceive",
+          "obb"
+        ],
+        [
+          "obb",
+          "found"
+        ],
+        [
+          "found",
+          "END"
+        ]
+      ],
+      "conditional_edges": {},
+      "exit": {
+        "router_field": null,
+        "success_values": [
+          "found"
+        ]
+      },
+      "on_error": "not_found"
+    },
+    "next_sg": {
+      "skill": "perceiving-objects",
+      "inputs": {
+        "colors": "str"
+      },
+      "outputs": {
+        "target_obb": {
+          "$ref": "obb.obb"
+        },
+        "color": {
+          "$ref": "choose.color"
+        }
+      },
+      "nodes": {
+        "choose": {
+          "type": "script",
+          "script": "scripts/choose_color.py",
+          "inputs": {
+            "colors": {
+              "$ref": "in.colors"
+            }
+          }
+        },
+        "route": {
+          "type": "router",
+          "script": "scripts/route_choice.py",
+          "inputs": {
+            "finished": {
+              "$ref": "choose.finished"
+            }
+          }
+        },
+        "observe": {
+          "type": "tool",
+          "tool": "robot.get_observation"
+        },
+        "perceive": {
+          "type": "script",
+          "script": "scripts/perceive_dino_vlm.py",
+          "inputs": {
+            "cameras": {
+              "$ref": "observe.cameras"
+            },
+            "object_name": {
+              "$ref": "choose.object_name"
+            },
+            "object_description": {
+              "$ref": "choose.object_description"
+            },
+            "use_multiview": false
+          }
+        },
+        "obb": {
+          "type": "tool",
+          "tool": "geometry.filter_and_compute_obb",
+          "inputs": {
+            "points": {
+              "$ref": "perceive.cloud"
+            },
+            "eps": 0.008,
+            "min_samples": 5
+          }
+        },
+        "found": {
+          "type": "noop"
+        },
+        "finished": {
+          "type": "noop"
+        }
+      },
+      "edges": [
+        [
+          "START",
+          "choose"
+        ],
+        [
+          "choose",
+          "route"
+        ],
+        [
+          "observe",
+          "perceive"
+        ],
+        [
+          "perceive",
+          "obb"
+        ],
+        [
+          "obb",
+          "found"
+        ],
+        [
+          "found",
+          "END"
+        ],
+        [
+          "finished",
+          "END"
+        ]
+      ],
+      "conditional_edges": {
+        "route": {
+          "router_field": null,
+          "mapping": {
+            "pick": "observe",
+            "finished": "finished"
+          }
+        }
+      },
+      "exit": {
+        "router_field": null,
+        "success_values": [
+          "found",
+          "finished"
+        ]
+      },
+      "on_error": "not_found"
+    },
+    "grasp_sg": {
+      "skill": "generic",
+      "inputs": {
+        "target_obb": "OrientedBoundingBox"
+      },
+      "outputs": {
+        "grasp_xyz": {
+          "$ref": "pick.grasp_xyz"
+        }
+      },
+      "nodes": {
+        "pick": {
+          "type": "script",
+          "script": "scripts/so101_pick.py",
+          "inputs": {
+            "target_obb": {
+              "$ref": "in.target_obb"
+            }
+          }
+        },
+        "grasped": {
+          "type": "noop"
+        }
+      },
+      "edges": [
+        [
+          "START",
+          "pick"
+        ],
+        [
+          "pick",
+          "grasped"
+        ],
+        [
+          "grasped",
+          "END"
+        ]
+      ],
+      "conditional_edges": {},
+      "exit": {
+        "router_field": null,
+        "success_values": [
+          "grasped"
+        ]
+      },
+      "on_error": "failed"
+    },
+    "place_sg": {
+      "skill": "generic",
+      "inputs": {
+        "container_obb": "OrientedBoundingBox",
+        "color": "str",
+        "colors": "str"
+      },
+      "outputs": {
+        "place_xyz": {
+          "$ref": "put.place_xyz"
+        }
+      },
+      "nodes": {
+        "put": {
+          "type": "script",
+          "script": "scripts/so101_place.py",
+          "inputs": {
+            "container_obb": {
+              "$ref": "in.container_obb"
+            },
+            "color": {
+              "$ref": "in.color"
+            },
+            "colors": {
+              "$ref": "in.colors"
+            }
+          }
+        },
+        "verify": {
+          "type": "router",
+          "script": "scripts/verify_color.py",
+          "inputs": {
+            "color": {
+              "$ref": "in.color"
+            }
+          }
+        },
+        "verified": {
+          "type": "noop"
+        },
+        "missed": {
+          "type": "noop"
+        }
+      },
+      "edges": [
+        [
+          "START",
+          "put"
+        ],
+        [
+          "put",
+          "verify"
+        ],
+        [
+          "verified",
+          "END"
+        ],
+        [
+          "missed",
+          "END"
+        ]
+      ],
+      "conditional_edges": {
+        "verify": {
+          "router_field": null,
+          "mapping": {
+            "verified": "verified",
+            "missed": "missed"
+          }
+        }
+      },
+      "exit": {
+        "router_field": null,
+        "success_values": [
+          "verified",
+          "missed"
+        ]
+      },
+      "on_error": "blocked"
+    }
+  }
+}
